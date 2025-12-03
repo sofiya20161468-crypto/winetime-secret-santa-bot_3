@@ -1,0 +1,97 @@
+import telebot
+import random
+
+BOT_TOKEN = "8216185202:AAGb62dCp6El_bnpmwx2fMHEQEgXgsaFZS0"
+
+bot = telebot.TeleBot(BOT_TOKEN)
+
+participants = {}  # {"username": {"name": ..., "wish": ...}}
+admin_id = None
+game_started = False
+
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.reply_to(message, "🎅 Привіт! Це корпоративний Secret Santa.\n\n"
+                          "Команди:\n"
+                          "/register – зареєструватися\n"
+                          "/wish – додати бажання\n"
+                          "/info – подивитися інформацію\n"
+                          "/admin – стати адміном (перший хто напише)\n"
+                          "/start_game – почати гру (адмін)\n")
+
+@bot.message_handler(commands=['admin'])
+def set_admin(message):
+    global admin_id
+    if admin_id is None:
+        admin_id = message.chat.id
+        bot.reply_to(message, "🔑 Ви тепер адмін!")
+    else:
+        bot.reply_to(message, "Адмін уже існує.")
+
+@bot.message_handler(commands=['register'])
+def register(message):
+    username = message.from_user.username
+    if not username:
+        bot.reply_to(message, "У вас немає username у Telegram!")
+        return
+    if username in participants:
+        bot.reply_to(message, "Ви вже зареєстровані!")
+        return
+    participants[username] = {"name": message.from_user.first_name, "wish": None}
+    bot.reply_to(message, "✅ Ви зареєстровані!")
+
+@bot.message_handler(commands=['wish'])
+def wish(message):
+    username = message.from_user.username
+    if not username or username not in participants:
+        bot.reply_to(message, "Спочатку зареєструйтеся: /register")
+        return
+    wish_text = message.text.replace("/wish", "").strip()
+    if not wish_text:
+        bot.reply_to(message, "Напишіть бажання так: /wish шоколад 🍫")
+        return
+    participants[username]["wish"] = wish_text
+    bot.reply_to(message, "🎁 Бажання збережено!")
+
+@bot.message_handler(commands=['info'])
+def info(message):
+    username = message.from_user.username
+    if username in participants:
+        wish = participants[username]["wish"]
+        bot.reply_to(message, f"Ваше бажання: {wish if wish else 'не вказано'}")
+    else:
+        bot.reply_to(message, "Ви ще не зареєстровані!")
+
+@bot.message_handler(commands=['start_game'])
+def start_game(message):
+    global game_started
+    if message.chat.id != admin_id:
+        bot.reply_to(message, "Ви не адмін!")
+        return
+    if game_started:
+        bot.reply_to(message, "Гра вже почалася!")
+        return
+    if len(participants) < 3:
+        bot.reply_to(message, "Має бути хоча б 3 учасники!")
+        return
+
+    game_started = True
+    users = list(participants.keys())
+    receivers = users.copy()
+    random.shuffle(receivers)
+
+    # Перемішуємо так, щоб ніхто не отримав сам себе
+    while any(u == r for u, r in zip(users, receivers)):
+        random.shuffle(receivers)
+
+    for giver, receiver in zip(users, receivers):
+        wish = participants[receiver]["wish"]
+        bot.send_message(
+            chat_id=message.chat.id,
+            text=f"🎅 @{giver}, ти — Санта для @{receiver}!\n"
+                 f"Його бажання: {wish or 'не вказано'}"
+        )
+
+    bot.send_message(message.chat.id, "✨ Гра почалася!")
+
+bot.polling()
